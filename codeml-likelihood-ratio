@@ -1,0 +1,70 @@
+#!/usr/bin/python 
+
+import re
+import glob
+from scipy import stats 
+
+#Set path to "out" directory of codeml files here
+path = "PATH-TO-OUT-DIRECTORY/*"
+files =glob.glob(path)
+
+d = {}
+#Strip relevant values from files and add to dictionary d
+for i in files:
+	#Get file name; and if fix or no fix
+	gene_name = re.sub(r'\...*','', re.sub(r'..*\/','',i))
+	#print gene_name
+	omega =  re.sub(r'\.out','', re.sub(r'..*\.1\.','',i))
+	#print omega
+	#Open file
+	with open (i) as f:
+		#Create nested dictionary, where value is a list
+		d.setdefault(gene_name, {})[omega]=[]
+		for line in f:
+			sline = line.strip()
+			#Collect values from file and add to dictionary
+			if "lnL" in sline:
+				params= int(re.sub(r'\)','', str(sline.split(":")[2])))
+				lnL= float(sline.split(":")[3].split()[0])
+				d[gene_name][omega].append(params)
+				d[gene_name][omega].append(lnL)
+			if "(dN/dS)" in sline:	
+				a, b = sline.split()[4:6]
+				bg_dNdS= float(a)
+				dNdS = float(b)
+				d[gene_name][omega].append(bg_dNdS)
+				d[gene_name][omega].append(dNdS)
+			if "tree length for dN:" in sline:
+				tl_dN = sline.split()[4]
+				d[gene_name][omega].append(tl_dN)
+			if "tree length for dS:" in sline:
+				tl_dS = sline.split()[4]
+				d[gene_name][omega].append(tl_dS)
+	
+#File Header
+print "geneID" + "\t" + "D" + "\t" + "df" + "\t" + "p_value" + "\t" + "null_lnL" + "\t" + "alt_lnL" + "\t" + "null_bg_dNdS" + "\t" + "null_dNdS" + "\t" + "alt_bg_dNdS" + "\t" + "alt_dNdS" + "\t" + "tree_null_dN" + "\t" + "tree_null_dS" + "\t" + "tree_alt_dN" + "\t" + "tree_alt_dS"
+
+for gene in d:
+	try:
+		a = str(gene) + str(",") + str(d[gene])
+		#turn nested dictionaries into list
+		gene_list = re.sub(r'\{', '', re.sub(r'\}','', re.sub(r'\[','',re.sub(r'\]','',re.sub(r'\'','',re.sub(r':', ',',a)))))).split(',')
+	  #Extract values for likelihood ratio test
+		null_lnL= float(gene_list[3])
+		alt_lnL= float(gene_list[10])
+		null_df= float(gene_list[2])
+		alt_df = float(gene_list[9])
+		#Calculate test statistic
+		D = float(-2*(null_lnL-alt_lnL))
+		#Calculate degrees of freedom
+		df = float(alt_df - null_df)
+		#Calculate p value
+		p_value= float(1 - stats.chi2.cdf(D, df))
+		
+		print gene_list[0] + "\t" + str(D) + "\t" + str(df) + "\t" + str(p_value) + "\t" + str(null_lnL) + "\t" + str(alt_lnL) + "\t" + gene_list[4] + "\t" + gene_list[5] + "\t" + gene_list[11] + "\t" + gene_list[12] + "\t" + gene_list[6] + "\t" + gene_list[7] + "\t" + gene_list[13] + "\t" + gene_list[14]
+		
+	except ValueError:
+	  #Error likely to be caused by blank input file from codeml
+		print "dodgy gene, not written: " + str(gene)
+		pass
+
