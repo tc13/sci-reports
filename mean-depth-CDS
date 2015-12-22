@@ -1,0 +1,63 @@
+#! usr/bin/python 
+
+from sys import argv 
+import sys
+import fileinput
+import re
+
+#Read gff from command line args
+gff_in = argv[1]
+
+#Get gene IDs and positions as dictionary
+exon_map = {}
+gene_length = {}
+with open (gff_in) as gff:
+	for line in gff:
+		sline= line.split("\t")
+		#Get Chr name
+		chrom = sline[0].strip()
+		#Get gene ID
+		ID = re.sub(r':..*','', re.sub(r'ID=', '', sline[8])).strip()
+ 		#Start positon of CDS
+		lower = int(sline[3].strip())
+		#End position of CDS
+		upper = int(sline[4].strip())
+		#Length of CDS
+		length = int(upper)- int(lower)
+		gene_length[ID]= gene_length.get(ID, 0) + length
+		#Dictionary of gene positions
+		for i in range(lower,upper):
+			exon_map.setdefault(chrom, {})[i]=(ID, length)
+
+
+#Function to lookup particular chromosome and position in exon map		 
+def lookup(exon_map,chrom,pos):
+	try:
+		details= exon_map.get(chrom).get(pos)
+		return details	
+	except AttributeError:
+		pass
+#Read BAM depth from stdin
+depth_dict = {}
+chrom_dict= {}
+for row in sys.stdin:
+	try:
+		chromosome, p, d = row.split("\t")
+		position = int(p)
+		depth = int(d)
+	except ValueError:
+		raise ValueError("Stdin does not have 3 columns")
+
+	gene_tuple = lookup(exon_map, chromosome, position)
+
+	if gene_tuple is not None:
+		gene_ID = gene_tuple[0]
+		depth_dict[gene_ID]= depth_dict.get(gene_ID, 0)+ depth
+		chrom_dict[gene_ID]= chrom_dict.get(gene_ID, chromosome)
+	else:
+		pass
+
+print "ID" + "\t" + "Mean_depth" + "\t" + "Length" + "\t" + "Chromosome"
+for gene_ID, total_depth in depth_dict.items():
+	mean_depth= float(total_depth) / gene_length[gene_ID]
+	print gene_ID + "\t" + str(mean_depth) + "\t" + str(gene_length[gene_ID]) + "\t" + str(chrom_dict[gene_ID])
